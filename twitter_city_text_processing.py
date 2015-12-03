@@ -1,11 +1,17 @@
 from TwitterSearch import *
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
 from nltk.corpus import stopwords
 from nltk.stem.snowball import SnowballStemmer
+from sklearn.naive_bayes import MultinomialNB
 import pdb
 import neglist
 import poslist
+import numpy as np
+count_vect = CountVectorizer()
+tfidf_transformer = TfidfTransformer()
+
 
 stemmer = SnowballStemmer("english")
 sw = stopwords.words("english")
@@ -17,7 +23,9 @@ count = 0
 while True:
     tso = TwitterSearchOrder()  # create a TwitterSearchOrder object
     # let's define all words we would like to have a look for
-    tso.set_keywords(['ISIS'])
+    tso.set_keywords(['+exclude:retweets'])
+    tso.set_geocode(48.856614, 2.3522219000000177, 20, imperial_metric=True)
+    tso.set_result_type('recent')
     tso.set_language('en')  # we want to see German tweets only
     # and don't give us all those entity information
     tso.set_include_entities(False)
@@ -34,7 +42,7 @@ while True:
     for tweet in ts.search_tweets_iterable(tso):
         count = count + 1
         tweet_list.append(tweet['text'].encode('ascii', 'ignore').lower())
-        if count == 100:
+        if count == 10:
             break
     break
 print tweet_list
@@ -64,29 +72,46 @@ bag_of_words = vectorizer.transform(tweet_list_stop_stem)
 print bag_of_words
 print tweet_list_stop_stem
 tfidf = TfidfVectorizer(sublinear_tf=True, max_df=0.5, stop_words='english')
-l = ["Have a nice day", "Have a nice night"]
 x = tfidf.fit_transform(tweet_list_stop_stem)
 t_idf = tfidf.idf_
 t_dictionary = dict(zip(tfidf.get_feature_names(), t_idf))
+stop_stem_trainer = np.concatenate(
+    (neg_stop_stem_trainer, pos_stop_stem_trainer))
 
-x = tfidf.fit_transform(neg_stop_stem_trainer)
+x = tfidf.fit_transform(stop_stem_trainer)
 n_idf = tfidf.idf_
-n_dictionary = dict(zip(tfidf.get_feature_names(), n_idf))
+neg_train = np.array([])
+pos_train = np.array([])
 
-x = tfidf.fit_transform(pos_stop_stem_trainer)
-p_idf = tfidf.idf_
-p_dictionary = dict(zip(tfidf.get_feature_names(), p_idf))
+for l in range(len(pos_stop_stem_trainer)):
+    pos_train = np.append(pos_train, ['positive'])
+for l in range(len(neg_stop_stem_trainer)):
+    neg_train = np.append(neg_train, ['negative'])
 
-#selector = SelectPercentile(f_classif, percentile=10)
-# selectory.fit(x,labels train)
-n_shared_items = set(t_dictionary.keys()) & set(n_dictionary.keys())
-p_shared_items = set(t_dictionary.keys()) & set(p_dictionary.keys())
-delta = len(p_shared_items) - len(n_shared_items)
+t_train = np.concatenate((neg_train, pos_train))
 
-print delta
-print "Positive Shared"
-print len(p_shared_items)
-print p_shared_items
-print "Negative Shared"
-print len(n_shared_items)
-print n_shared_items
+
+t_tf = tfidf_transformer.fit_transform(x)
+
+
+clf = MultinomialNB().fit(t_tf, t_train)
+
+docs_new = np.array(['God is love', 'OpenGL on the GPU is fast'])
+
+X_test = tfidf.transform(docs_new)
+
+predicted = clf.predict(X_test)
+
+
+print predicted
+
+for l in range(10):
+    statement = tweet_list[l]
+
+    #statement = raw_input('Enter Statement: ')
+    X_test = tfidf.transform(np.array([statement]))
+    predicted = clf.predict(X_test)
+    prob = clf.predict_proba(X_test)
+    print "Tweet: " + str(l)
+    print statement
+    print predicted, prob
